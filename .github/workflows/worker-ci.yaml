@@ -1,0 +1,62 @@
+name: Worker Service CI/CD
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'worker/**' # Only trigger if files in the worker directory change
+
+permissions:
+  contents: write
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: media-processor-worker
+  GITOPS_REPO: rohanan07/media-processor-gitops # FIXME: Update with your real GitOps repo path
+
+jobs:
+  build-and-ship:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Application Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, Tag, and Push Docker Image
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG ./worker
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      # 🔄 THE GITOPS WRITEBACK STEP
+      - name: Update GitOps Manifest Image Tag
+        env:
+          NEW_TAG: ${{ github.sha }}
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          GITOPS_PAT: ${{ secrets.GITOPS_GITHUB_PAT }}
+        run: |
+          git clone https://x-access-token:${GITOPS_PAT}@github.com/${{ env.GITOPS_REPO }}.git gitops-repo
+          cd gitops-repo/apps/worker-service/environments/dev
+          
+          sed -i "s|newTag:.*|newTag: ${NEW_TAG}|g" kustomization.yaml
+          
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add kustomization.yaml
+          git commit -m "chore(worker): update staging image tag to ${NEW_TAG} [skip ci]"
+          git push origin main

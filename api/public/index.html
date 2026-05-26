@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cloud-Native Media Processor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen flex flex-col justify-center items-center p-6">
+
+    <div class="max-w-md w-full bg-gray-800 p-8 rounded-xl shadow-2xl border border-gray-700">
+        <h1 class="text-2xl font-bold text-center mb-2 text-indigo-400">Media Processor</h1>
+        <p class="text-gray-400 text-sm text-center mb-6">Upload an image for compression or a video for thumbnail extraction.</p>
+
+        <form id="uploadForm" class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-300 mb-2">Select Processing Type</label>
+                <select id="taskType" class="w-full bg-gray-700 border border-gray-600 rounded-lg p-2.5 text-white focus:ring-indigo-500 focus:border-indigo-500">
+                    <option value="compress_image">Compress Image (.webp)</option>
+                    <option value="extract_thumbnail">Extract Video Thumbnail</option>
+                </select>
+            </div>
+
+            <div class="flex items-center justify-center w-full">
+                <label class="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-600 border-dashed rounded-lg cursor-pointer bg-gray-700 hover:bg-gray-600">
+                    <div class="flex flex-col items-center justify-center pt-5 pb-6">
+                        <p class="mb-2 text-sm text-gray-300"><span class="font-semibold">Click to upload</span> or drag and drop</p>
+                        <p id="fileName" class="text-xs text-indigo-400 mt-1 font-medium">No file selected</p>
+                    </div>
+                    <input id="fileInput" type="file" class="hidden" required />
+                </label>
+            </div>
+
+            <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg text-sm px-5 py-2.5 transition">
+                Submit Job
+            </button>
+        </form>
+
+        <div id="statusBox" class="mt-6 p-4 bg-gray-900 rounded-lg hidden border border-gray-700">
+            <p class="text-sm font-medium text-gray-300">Job Status: <span id="jobStatus" class="text-indigo-400">Pending</span></p>
+            <div id="progressContainer" class="w-full bg-gray-700 rounded-full h-2 mt-2 hidden">
+                <div id="progressBar" class="bg-indigo-500 h-2 rounded-full animate-pulse" style="width: 50%"></div>
+            </div>
+            <a id="downloadBtn" href="#" target="_blank" class="mt-3 block text-center bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg text-xs px-4 py-2 hidden transition">
+                Download Result
+            </a>
+        </div>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('fileInput');
+        const fileName = document.getElementById('fileName');
+        const uploadForm = document.getElementById('uploadForm');
+        const statusBox = document.getElementById('statusBox');
+        const jobStatus = document.getElementById('jobStatus');
+        const progressContainer = document.getElementById('progressContainer');
+        const downloadBtn = document.getElementById('downloadBtn');
+
+        fileInput.addEventListener('change', (e) => {
+            if(e.target.files.length > 0) fileName.innerText = e.target.files[0].name;
+        });
+
+        uploadForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const file = fileInput.files[0];
+            const taskType = document.getElementById('taskType').value;
+            
+            // Create Multi-part Form Data payload
+            const formData = new FormData();
+            formData.append('mediaFile', file);
+            formData.append('taskType', taskType);
+
+            statusBox.classList.remove('hidden');
+            progressContainer.classList.remove('hidden');
+            downloadBtn.classList.add('hidden');
+            jobStatus.innerText = "Uploading file to API Gateway...";
+
+            try {
+                // 1. Submit file to API
+                const response = await fetch('/api/v1/process', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'Upload failed');
+
+                const jobId = data.jobId;
+                jobStatus.innerText = "Queued in Redis. Waiting for background worker...";
+
+                // 2. Begin Status Polling Loop every 2 seconds
+                const pollInterval = setInterval(async () => {
+                    const statusResponse = await fetch(`/api/v1/jobs/${jobId}`);
+                    const statusData = await statusResponse.json();
+
+                    if (statusData.status === 'processing') {
+                        jobStatus.innerText = "Worker active: Processing media transformations...";
+                    } else if (statusData.status === 'completed') {
+                        clearInterval(pollInterval);
+                        jobStatus.innerText = "Success! Media processed completely.";
+                        progressContainer.classList.add('hidden');
+                        downloadBtn.href = statusData.downloadUrl;
+                        downloadBtn.innerText = "Download Processed Asset";
+                        downloadBtn.classList.remove('hidden');
+                    } else if (statusData.status === 'failed') {
+                        clearInterval(pollInterval);
+                        jobStatus.innerText = `Failed: ${statusData.errorReason}`;
+                        progressContainer.classList.add('hidden');
+                    }
+                }, 2000);
+
+            } catch (err) {
+                jobStatus.innerText = `Error: ${err.message}`;
+                progressContainer.classList.add('hidden');
+            }
+        });
+    </script>
+</body>
+</html>

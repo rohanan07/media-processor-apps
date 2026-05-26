@@ -1,0 +1,17 @@
+services:
+  redis:
+    image: redis:alpine
+    container_name: media-redis-local
+    ports:
+      - "6379:6379"
+
+  localstack:
+    image: localstack/localstack:latest
+    container_name: media-aws-local
+    ports:
+      - "4566:4566"
+    environment:
+      SERVICES: s3,dynamodb
+      DEBUG: 1
+    volumes:
+      - "./volume:/var/lib/localstack"

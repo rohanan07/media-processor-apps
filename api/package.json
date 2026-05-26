@@ -1,0 +1,19 @@
+{
+  "name": "media-processor-api",
+  "version": "1.0.0",
+  "description": "API Gateway and Frontend for Media Processor",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.500.0",
+    "@aws-sdk/client-s3": "^3.1053.0",
+    "@aws-sdk/lib-dynamodb": "^3.500.0",
+    "@aws-sdk/s3-request-presigner": "^3.1053.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "multer": "^2.1.1",
+    "redis": "^4.6.13"
+  }
+}

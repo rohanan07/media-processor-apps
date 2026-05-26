@@ -1,0 +1,66 @@
+name: API Service CI/CD
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'api/**' # Only trigger if files in the api directory change
+
+permissions:
+  contents: write # Allows GitHub to commit back to your GitOps repo
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: media-processor-api
+  GITOPS_REPO: rohanan07/media-processor-gitops # FIXME: Update with your real GitOps repo path
+
+jobs:
+  build-and-ship:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Application Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, Tag, and Push Docker Image
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }} # Use unique git commit SHA as image tag
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG ./api
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      # 🔄 THE GITOPS WRITEBACK STEP
+      - name: Update GitOps Manifest Image Tag
+        env:
+          NEW_TAG: ${{ github.sha }}
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          GITOPS_PAT: ${{ secrets.GITOPS_GITHUB_PAT }} # Personal Access Token to write to Repo 3
+        run: |
+          # 1. Clone the dedicated Config/GitOps repository
+          git clone https://x-access-token:${GITOPS_PAT}@github.com/${{ env.GITOPS_REPO }}.git gitops-repo
+          cd gitops-repo/apps/api-service/environments/dev
+          
+          # 2. Update the image name and newTag inside kustomization.yaml using sed
+          # This tells Kustomize exactly which new container version ArgoCD needs to pull
+          sed -i "s|newTag:.*|newTag: ${NEW_TAG}|g" kustomization.yaml
+          
+          # 3. Commit and push changes back to the GitOps Repository
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add kustomization.yaml
+          git commit -m "chore(api): update staging image tag to ${NEW_TAG} [skip ci]"
+          git push origin main
