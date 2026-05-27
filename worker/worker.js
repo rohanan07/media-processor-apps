@@ -154,7 +154,7 @@ async function startWorker() {
             }
         }
     } catch (criticalError) {
-        console.error('Critical runtime error inside execution contexts:', criticalError);
+        console.error('Critical runtime error inside execution context:', criticalError);
         process.exit(1);
     }
 }

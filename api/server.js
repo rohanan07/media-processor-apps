@@ -129,7 +129,7 @@ app.get('/api/v1/jobs/:jobId', async (req, res) => {
 
     } catch (error) {
         console.error('Failed to fetch job metadata:', error);
-        res.status(500).json({ error: 'Internal Server Error during polling execution.' });
+        res.status(500).json({ error: 'Internal Server Errors during polling execution.' });
     }
 });
 
