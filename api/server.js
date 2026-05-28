@@ -48,7 +48,7 @@ app.post('/api/v1/process', upload.single('mediaFile'), async (req, res) => {
         const fileExtension = path.extname(file.originalname);
         const s3Key = `raw/${jobId}${fileExtension}`;
 
-        console.log(`[${jobId}] Processing request received. Uploading to S3...`);
+        console.log(`[${jobId}] Processing request received. Uploadings to S3...`);
 
         // A. Stream raw file up to Amazon S3
         await s3Client.send(new PutObjectCommand({
